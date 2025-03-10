@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>FRC Alliance Selection Optimizer</title>
+  <!-- Papa Parse library for CSV parsing -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+    th { background-color: #f2f2f2; }
+    select { width: 220px; }
+    input[type="number"] { width: 100px; }
+    #csvFileInput { margin-bottom: 20px; }
+    #updateTeamsButton { margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h1>FRC Alliance Selection Optimizer</h1>
+  <p>
+    Upload your CSV file with team data. The CSV should have a header row with these columns: 
+    <strong>num, rank, total_epa, auto_epa, teleop_epa, endgame_epa</strong> (others will be ignored).
+    We will use the <em>num</em> column as the team number.
+  </p>
+  <input type="file" id="csvFileInput" accept=".csv">
+  
+  <p>
+    <strong>Alliance Selector</strong><br>
+    The top eight teams (by rank; lower numbers are better) are assigned as alliance captains.
+    When you select a team from a pick dropdown, if that team is currently an alliance captain from another alliance,
+    it will be “stolen” and all alliances’ captains will be recalculated – every team moves up one space.
+    Note: For the second pick, alliance captains are not allowed.
+  </p>
+  <table id="allianceTable">
+    <thead>
+      <tr>
+        <th>Alliance #</th>
+        <th>Alliance Captain</th>
+        <th>Pick 1</th>
+        <th>Recommendation 1</th>
+        <th>Pick 2</th>
+        <th>Recommendation 2</th>
+        <th>Alliance Score</th>
+      </tr>
+    </thead>
+    <tbody id="allianceBody"></tbody>
+  </table>
+  
+  <h2>Team Data (Editable)</h2>
+  <p>Edit the EPA values and the defense checkbox for each team. Then click the "Update Teams" button to refresh the alliance recommendations using the new data.</p>
+  <button id="updateTeamsButton">Update Teams</button>
+  <table id="teamsTable">
+    <thead>
+      <tr>
+        <th>Team #</th>
+        <th>Team Name</th>
+        <th>Total EPA</th>
+        <th>Auto EPA</th>
+        <th>Teleop EPA</th>
+        <th>Endgame EPA</th>
+        <th>Defense</th>
+      </tr>
+    </thead>
+    <tbody id="teamsBody"></tbody>
+  </table>
+  <button id="updateTeamsButton">Update Teams</button>
+  
+  <script>
+    // Global variable to hold team data (populated from CSV)
+    var teams = [];
+    
+    // Scoring weights (adjust these if needed)
+    var W_AUTO = 1.2, W_TELEOP = 1.0, W_ENDGAME = 1.1;
+    // We'll use a bonus of 15 for defense if enabled.
+    var W_DEFENSE = 15;
+    
+    // This function computes each team's weighted score.
+    function computeTeamScores() {
+      teams.forEach(function(t) {
+        // Use the "num" column as the team number if it exists, otherwise fallback to "team"
+        t.name = t.team
+        t.team = Number(t.num) || 0;
+        t.rank = Number(t.rank) || 0;
+        t.total_epa = Number(t.total_epa) || 0;
+        t.auto_epa = Number(t.auto_epa) || 0;
+        t.teleop_epa = Number(t.teleop_epa) || 0;
+        t.endgame_epa = Number(t.endgame_epa) || 0;
+        // For defense, if the CSV contains a value, use it; otherwise default to false.
+        t.defense = (t.defense === true || t.defense === "true") ? true : false;
+        // Compute weighted score from EPA values plus a bonus if defense is enabled.
+        t.score = W_AUTO * t.auto_epa + W_TELEOP * t.teleop_epa + W_ENDGAME * t.endgame_epa + (t.defense ? W_DEFENSE : 0);
+      });
+    }
+    
+    // Sort teams by rank (ascending)
+    function sortTeamsByRank() {
+      teams.sort(function(a, b) {
+        return a.rank - b.rank;
+      });
+    }
+    
+    // ----- Alliance Structure -----
+    var alliances = [];
+    function initializeAlliances() {
+      alliances = [];
+      for (var i = 0; i < 8; i++) {
+        alliances.push({
+          allianceNumber: i + 1,
+          captain: null,      // set in updateAllianceCaptains()
+          captainRank: null,
+          pick1: null,
+          pick2: null,
+          pick1Rec: null,
+          pick2Rec: null
+        });
+      }
+    }
+    
+    // Utility: Get selected picks from the alliance table
+    function getSelectedPicks() {
+      var selected = [];
+      alliances.forEach(function(a) {
+        if(a.pick1) { selected.push(parseInt(a.pick1)); }
+        if(a.pick2) { selected.push(parseInt(a.pick2)); }
+      });
+      return selected;
+    }
+    
+    // Recalculate alliance captains: from teams not already selected as picks, choose the top eight by rank.
+    function updateAllianceCaptains() {
+      var selectedPicks = getSelectedPicks();
+      var availableForCaptain = teams.filter(function(t) {
+        return selectedPicks.indexOf(t.team) === -1;
+      });
+      availableForCaptain.sort(function(a, b) {
+        return a.rank - b.rank;
+      });
+      for (var i = 0; i < alliances.length; i++) {
+        if (availableForCaptain[i]) {
+          alliances[i].captain = availableForCaptain[i].team;
+          alliances[i].captainRank = availableForCaptain[i].rank;
+        } else {
+          alliances[i].captain = null;
+          alliances[i].captainRank = null;
+        }
+      }
+    }
+    
+    // Get available teams for a draft pick.
+    // For "pick1": provisional captains are allowed to be stolen if their rank is worse than the drafting captain.
+    // For "pick2": alliance captains are excluded.
+    function getAvailableTeams(draftingCaptainRank, pickType) {
+      var selected = getSelectedPicks();
+      alliances.forEach(function(a) {
+        if(a.captain) { selected.push(a.captain); }
+      });
+      var available = teams.filter(function(t) {
+        if(selected.indexOf(t.team) === -1) return true;
+        var isCaptain = alliances.some(function(a) { return a.captain === t.team; });
+        if(isCaptain) {
+          if(pickType === 'pick1' && t.rank > draftingCaptainRank) return true;
+          return false;
+        }
+        return false;
+      });
+      available.sort(function(a, b) {
+        return b.score - a.score;
+      });
+      return available;
+    }
+    
+    // Helper: Get a team's score from the global teams array
+    function getTeamScore(teamNumber) {
+      var team = teams.find(function(t) { return t.team === teamNumber; });
+      return team ? team.score : 0;
+    }
+    
+    // Update alliance recommendations using a snake-draft order.
+    function updateRecommendations() {
+      var draftOrder = [];
+      alliances.forEach(function(a, idx) {
+        if(!a.pick1) draftOrder.push({ allianceIndex: idx, pick: 'pick1', captainRank: a.captainRank });
+      });
+      for(var i = alliances.length-1; i >= 0; i--) {
+        if(!alliances[i].pick2) draftOrder.push({ allianceIndex: i, pick: 'pick2', captainRank: alliances[i].captainRank });
+      }
+      draftOrder.forEach(function(slot) {
+        var available = getAvailableTeams(slot.captainRank, slot.pick);
+        if(available.length > 0) {
+          alliances[slot.allianceIndex][slot.pick + 'Rec'] = available[0];
+        } else {
+          alliances[slot.allianceIndex][slot.pick + 'Rec'] = null;
+        }
+      });
+      renderAllianceTable();
+    }
+    
+    // Render the alliance selector table.
+    function renderAllianceTable() {
+      var tbody = document.getElementById('allianceBody');
+      tbody.innerHTML = '';
+      alliances.forEach(function(a, idx) {
+        var row = document.createElement('tr');
+        // Alliance Number
+        var cellAlliance = document.createElement('td');
+        cellAlliance.innerText = a.allianceNumber;
+        row.appendChild(cellAlliance);
+        // Alliance Captain
+        var cellCaptain = document.createElement('td');
+        cellCaptain.innerText = a.captain ? a.captain : "N/A";
+        row.appendChild(cellCaptain);
+        // Pick 1 Dropdown
+        var cellPick1 = document.createElement('td');
+        var selectPick1 = document.createElement('select');
+        selectPick1.dataset.allianceIndex = idx;
+        selectPick1.dataset.pick = 'pick1';
+        var emptyOption1 = document.createElement('option');
+        emptyOption1.value = "";
+        emptyOption1.text = "Select team";
+        selectPick1.appendChild(emptyOption1);
+        var availablePick1 = getAvailableTeams(a.captainRank, 'pick1');
+        if(a.pick1) {
+          var currentCandidate = teams.find(function(t) { return t.team === parseInt(a.pick1); });
+          var exists = availablePick1.some(function(t) { return t.team === currentCandidate.team; });
+          if(!exists) { availablePick1.unshift(currentCandidate); }
+        }
+        availablePick1.forEach(function(team) {
+          var option = document.createElement('option');
+          option.value = team.team;
+          option.text = "Team " + team.team + " (Score: " + team.score.toFixed(1) + ")";
+          if(a.pick1 && parseInt(a.pick1) === team.team) {
+            option.selected = true;
+          }
+          selectPick1.appendChild(option);
+        });
+        selectPick1.addEventListener('change', onPickChange);
+        cellPick1.appendChild(selectPick1);
+        row.appendChild(cellPick1);
+        // Recommendation for Pick 1
+        var cellRec1 = document.createElement('td');
+        if(a.pick1Rec) {
+          cellRec1.innerText = 'Team ' + a.pick1Rec.team + ' (Score: ' + a.pick1Rec.score.toFixed(1) + ')';
+        } else {
+          cellRec1.innerText = 'N/A';
+        }
+        row.appendChild(cellRec1);
+        // Pick 2 Dropdown
+        var cellPick2 = document.createElement('td');
+        var selectPick2 = document.createElement('select');
+        selectPick2.dataset.allianceIndex = idx;
+        selectPick2.dataset.pick = 'pick2';
+        var emptyOption2 = document.createElement('option');
+        emptyOption2.value = "";
+        emptyOption2.text = "Select team";
+        selectPick2.appendChild(emptyOption2);
+        var availablePick2 = getAvailableTeams(a.captainRank, 'pick2');
+        if(a.pick2) {
+          var currentCandidate2 = teams.find(function(t) { return t.team === parseInt(a.pick2); });
+          var exists2 = availablePick2.some(function(t) { return t.team === currentCandidate2.team; });
+          if(!exists2) { availablePick2.unshift(currentCandidate2); }
+        }
+        availablePick2.forEach(function(team) {
+          var option = document.createElement('option');
+          option.value = team.team;
+          option.text = "Team " + team.team + " (Score: " + team.score.toFixed(1) + ")";
+          if(a.pick2 && parseInt(a.pick2) === team.team) {
+            option.selected = true;
+          }
+          selectPick2.appendChild(option);
+        });
+        selectPick2.addEventListener('change', onPickChange);
+        cellPick2.appendChild(selectPick2);
+        row.appendChild(cellPick2);
+        // Recommendation for Pick 2
+        var cellRec2 = document.createElement('td');
+        if(a.pick2Rec) {
+          cellRec2.innerText = 'Team ' + a.pick2Rec.team + ' (Score: ' + a.pick2Rec.score.toFixed(1) + ')';
+        } else {
+          cellRec2.innerText = 'N/A';
+        }
+        row.appendChild(cellRec2);
+        // Alliance Score
+        var cellAllianceScore = document.createElement('td');
+        var allianceScore = 0;
+        if(a.captain) allianceScore += getTeamScore(a.captain);
+        if(a.pick1) allianceScore += getTeamScore(a.pick1);
+        if(a.pick2) allianceScore += getTeamScore(a.pick2);
+        cellAllianceScore.innerText = allianceScore.toFixed(1);
+        row.appendChild(cellAllianceScore);
+        tbody.appendChild(row);
+      });
+    }
+    
+    // Render the editable teams table.
+    function renderTeamsTable() {
+      var tbody = document.getElementById('teamsBody');
+      tbody.innerHTML = '';
+      teams.forEach(function(t) {
+        var row = document.createElement('tr');
+        // Team number
+        var cellNum = document.createElement('td');
+        cellNum.innerText = t.team;
+        row.appendChild(cellNum);
+        // Team name (using t.first_event if available)
+        var cellName = document.createElement('td');
+        cellName.innerText = t.name ? t.name : "N/A";
+        row.appendChild(cellName);
+        // Total EPA (editable)
+        var cellTotal = document.createElement('td');
+        var inputTotal = document.createElement('input');
+        inputTotal.type = 'number';
+        inputTotal.value = t.total_epa;
+        inputTotal.dataset.team = t.team;
+        inputTotal.dataset.field = 'total_epa';
+        cellTotal.appendChild(inputTotal);
+        row.appendChild(cellTotal);
+        // Auto EPA (editable)
+        var cellAuto = document.createElement('td');
+        var inputAuto = document.createElement('input');
+        inputAuto.type = 'number';
+        inputAuto.value = t.auto_epa;
+        inputAuto.dataset.team = t.team;
+        inputAuto.dataset.field = 'auto_epa';
+        cellAuto.appendChild(inputAuto);
+        row.appendChild(cellAuto);
+        // Teleop EPA (editable)
+        var cellTeleop = document.createElement('td');
+        var inputTeleop = document.createElement('input');
+        inputTeleop.type = 'number';
+        inputTeleop.value = t.teleop_epa;
+        inputTeleop.dataset.team = t.team;
+        inputTeleop.dataset.field = 'teleop_epa';
+        cellTeleop.appendChild(inputTeleop);
+        row.appendChild(cellTeleop);
+        // Endgame EPA (editable)
+        var cellEndgame = document.createElement('td');
+        var inputEndgame = document.createElement('input');
+        inputEndgame.type = 'number';
+        inputEndgame.value = t.endgame_epa;
+        inputEndgame.dataset.team = t.team;
+        inputEndgame.dataset.field = 'endgame_epa';
+        cellEndgame.appendChild(inputEndgame);
+        row.appendChild(cellEndgame);
+        // Defense (checkbox)
+        var cellDefense = document.createElement('td');
+        var inputDefense = document.createElement('input');
+        inputDefense.type = 'checkbox';
+        inputDefense.checked = t.defense;
+        inputDefense.dataset.team = t.team;
+        inputDefense.dataset.field = 'defense';
+        cellDefense.appendChild(inputDefense);
+        row.appendChild(cellDefense);
+        tbody.appendChild(row);
+      });
+    }
+    
+    // Event handler for dropdown changes in the alliance table.
+    function onPickChange(event) {
+      var allianceIndex = event.target.dataset.allianceIndex;
+      var pickType = event.target.dataset.pick;
+      var value = event.target.value;
+      if(value === "") {
+        alliances[allianceIndex][pickType] = null;
+        updateAllianceCaptains();
+        updateRecommendations();
+        return;
+      }
+      var teamNum = parseInt(value);
+      var candidate = teams.find(function(t) { return t.team === teamNum; });
+      if(!candidate) {
+        alert('Team ' + teamNum + ' does not exist.');
+        alliances[allianceIndex][pickType] = null;
+        updateAllianceCaptains();
+        updateRecommendations();
+        return;
+      }
+      if(pickType === 'pick2') {
+        if(alliances.some(function(a) { return a.captain === candidate.team; })) {
+          alert('You cannot pick an alliance captain for the second pick.');
+          alliances[allianceIndex][pickType] = null;
+          updateAllianceCaptains();
+          updateRecommendations();
+          return;
+        }
+      }
+      var selectedPicks = getSelectedPicks();
+      if(selectedPicks.indexOf(candidate.team) !== -1) {
+        alert('Team ' + teamNum + ' is already selected.');
+        alliances[allianceIndex][pickType] = null;
+        updateAllianceCaptains();
+        updateRecommendations();
+        return;
+      }
+      alliances[allianceIndex][pickType] = teamNum;
+      updateAllianceCaptains();
+      updateRecommendations();
+    }
+    
+    // Event handler for the "Update Teams" button.
+    document.getElementById('updateTeamsButton').addEventListener('click', function() {
+      var inputs = document.querySelectorAll('#teamsBody input');
+      inputs.forEach(function(input) {
+        var teamId = Number(input.dataset.team);
+        var field = input.dataset.field;
+        var team = teams.find(function(t) { return t.team === teamId; });
+        if(team) {
+          if(field === 'defense') {
+            team[field] = input.checked;
+          } else {
+            team[field] = Number(input.value) || 0;
+          }
+        }
+      });
+      computeTeamScores();
+      sortTeamsByRank();
+      updateAllianceCaptains();
+      updateRecommendations();
+      renderTeamsTable();
+    });
+    
+    // CSV File Input Handling
+    document.getElementById('csvFileInput').addEventListener('change', function(e) {
+      var file = e.target.files[0];
+      if(!file) return;
+      Papa.parse(file, {
+        header: true,
+        // Remove or comment out the following line to let Papa Parse auto-detect the delimiter.
+        // If your CSV is tab-delimited, uncomment the next line:
+        // delimiter: "\t",
+        dynamicTyping: true,
+        complete: function(results) {
+          console.log("Parsed CSV data:", results.data);
+          // Expecting CSV headers: num, rank, total_epa, auto_epa, teleop_epa, endgame_epa (others ignored)
+          teams = results.data;
+          computeTeamScores();
+          sortTeamsByRank();
+          initializeAlliances();
+          updateAllianceCaptains();
+          updateRecommendations();
+          renderTeamsTable();
+        },
+        error: function(err) {
+          alert("Error parsing CSV: " + err);
+        }
+      });
+    });
+  </script>
+</body>
+</html>
