@@ -23,6 +23,5 @@ Thumbs.db
 # Ignore coverage reports
 coverage/
 
-# Ignore environment files except .env
-.env.*
+.env
 !.env
