@@ -11,31 +11,37 @@
     <button id="fetchButton">Fetch Data</button>
     <textarea id="output" readonly></textarea>
     <div id="tableContainer"></div>
+    <button onclick="window.location.href='allianceSelector.html'">Alliance Selector</button>
 
     <script>
-        document.getElementById('fetchButton').addEventListener('click', function() {
-            fetch('https://www.thebluealliance.com/api/v3/match/2024mxmo_qm72', {
-                headers: {
-                    'X-TBA-Auth-Key': 'pUaYdGj2ZnnR2wqsn5B3njz0HKbLkE3DQVC3llJ8GO1FKW9zADGOLYZBSBFoUb4L'
-                }
-            })
+        fetch('/env')
             .then(response => response.json())
-            .then(data => {
-                document.getElementById('output').value = JSON.stringify(data, null, 2);
-                createTable(data);
-            })
-            .catch(error => {
-                document.getElementById('output').value = 'Error: ' + error;
+            .then(env => {
+                const authKey = env.TBA_AUTH_KEY;
+
+                document.getElementById('fetchButton').addEventListener('click', function() {
+                    fetch('https://www.thebluealliance.com/api/v3/match/2024mxmo_qm72', {
+                        headers: {
+                            'X-TBA-Auth-Key': authKey
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        document.getElementById('output').value = JSON.stringify(data, null, 2);
+                        createTable(data);
+                    })
+                    .catch(error => {
+                        document.getElementById('output').value = 'Error: ' + error;
+                    });
+                });
             });
-        });
 
         function createTable(data) {
             const tableContainer = document.getElementById('tableContainer');
-            tableContainer.innerHTML = ''; // Clear previous table if any
+            tableContainer.innerHTML = ''; 
             const table = document.createElement('table');
             const thead = document.createElement('thead');
             const tbody = document.createElement('tbody');
-            // Create table headers
             const headers = getHeaders(data);
             const headerRow = document.createElement('tr');
             headers.forEach(header => {
@@ -45,7 +51,6 @@
             });
             thead.appendChild(headerRow);
 
-            // Create table rows
             const row = document.createElement('tr');
             headers.forEach(header => {
                 const td = document.createElement('td');
