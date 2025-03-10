@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hello World</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>Hello World</h1>
+    <button id="fetchButton">Fetch Data</button>
+    <textarea id="output" readonly></textarea>
+    <div id="tableContainer"></div>
+
+    <script>
+        document.getElementById('fetchButton').addEventListener('click', function() {
+            fetch('https://www.thebluealliance.com/api/v3/match/2024mxmo_qm72', {
+                headers: {
+                    'X-TBA-Auth-Key': 'pUaYdGj2ZnnR2wqsn5B3njz0HKbLkE3DQVC3llJ8GO1FKW9zADGOLYZBSBFoUb4L'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('output').value = JSON.stringify(data, null, 2);
+                createTable(data);
+            })
+            .catch(error => {
+                document.getElementById('output').value = 'Error: ' + error;
+            });
+        });
+
+        function createTable(data) {
+            const tableContainer = document.getElementById('tableContainer');
+            tableContainer.innerHTML = ''; // Clear previous table if any
+            const table = document.createElement('table');
+            const thead = document.createElement('thead');
+            const tbody = document.createElement('tbody');
+            // Create table headers
+            const headers = getHeaders(data);
+            const headerRow = document.createElement('tr');
+            headers.forEach(header => {
+                const th = document.createElement('th');
+                th.textContent = header;
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+
+            // Create table rows
+            const row = document.createElement('tr');
+            headers.forEach(header => {
+                const td = document.createElement('td');
+                td.textContent = formatData(data[header]);
+                row.appendChild(td);
+            });
+            tbody.appendChild(row);
+
+            table.appendChild(thead);
+            table.appendChild(tbody);
+            tableContainer.appendChild(table);
+        }
+
+        function getHeaders(data, prefix = '') {
+            let headers = [];
+            for (const key in data) {
+                if (typeof data[key] === 'object' && data[key] !== null) {
+                    headers = headers.concat(getHeaders(data[key], prefix + key + '.'));
+                } else {
+                    headers.push(prefix + key);
+                }
+            }
+            return headers;
+        }
+
+        function formatData(data) {
+            if (typeof data === 'object' && data !== null) {
+                return JSON.stringify(data);
+            }
+            return data;
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>FRC Alliance Selection Optimizer</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+    th { background-color: #f2f2f2; }
+    select { width: 220px; }
+  </style>
+</head>
+<body>
+  <h1>FRC Alliance Selection Optimizer</h1>
+  <p>
+    The top eight teams (by rank; lower numbers are better) are assigned as alliance captains.
+    When you select a team from a pick dropdown, if that team is currently an alliance captain from another alliance,
+    it will be “stolen” and all alliances’ captains will be recalculated – every team moves up one space.
+    Note: For the second pick, alliance captains are not allowed.
+  </p>
+  <button onclick="window.location.href='index.html'">Return to Home</button>
+  <table id="allianceTable">
+    <thead>
+      <tr>
+        <th>Alliance #</th>
+        <th>Alliance Captain</th>
+        <th>Pick 1</th>
+        <th>Recommendation 1</th>
+        <th>Pick 2</th>
+        <th>Recommendation 2</th>
+        <th>Alliance Score</th>
+      </tr>
+    </thead>
+    <tbody id="allianceBody"></tbody>
+  </table>
+
+  <script>
+    // ----- Sample Team Data -----
+    var teams = [
+        { team: 4635, rank: 1, total: 45.7, auto: 9.8, teleop: 28.6, endgame: 7.4, defense: true },
+        { team: 6348, rank: 2, total: 33.9, auto: 4.6, teleop: 27.9, endgame: 1.4, defense: false },
+        { team: 4403, rank: 3, total: 42.4, auto: 4.7, teleop: 30, endgame: 7.7, defense: false },
+        { team: 6106, rank: 4, total: 21.9, auto: 3.1, teleop: 17.9, endgame: 1, defense: false },
+        { team: 8290, rank: 5, total: 17.1, auto: 3.4, teleop: 11, endgame: 2.8, defense: false },
+        { team: 7421, rank: 6, total: 30.2, auto: 5.8, teleop: 22.9, endgame: 1.5, defense: false },
+        { team: 3526, rank: 7, total: 21, auto: 4.3, teleop: 15, endgame: 1.8, defense: false },
+        { team: 3472, rank: 8, total: 17.9, auto: 4.8, teleop: 12.1, endgame: 1, defense: false },
+        { team: 7102, rank: 9, total: 23.7, auto: 3.9, teleop: 18.3, endgame: 1.5, defense: false },
+        { team: 5887, rank: 10, total: 15.1, auto: 3.3, teleop: 9.1, endgame: 2.7, defense: false },
+        { team: 7546, rank: 11, total: 18.3, auto: 2.4, teleop: 13.9, endgame: 2, defense: false },
+        { team: 4010, rank: 12, total: 11.6, auto: 4.5, teleop: 6.1, endgame: 1, defense: false },
+        { team: 3480, rank: 13, total: 23.8, auto: 3.2, teleop: 18.1, endgame: 2.5, defense: false },
+        { team: 6017, rank: 14, total: 31.9, auto: 3.9, teleop: 24, endgame: 4, defense: false },
+        { team: 6647, rank: 15, total: 29.7, auto: 3.1, teleop: 25.3, endgame: 1.3, defense: false },
+        { team: 2283, rank: 16, total: 23.5, auto: 4.3, teleop: 17.9, endgame: 1.4, defense: false },
+        { team: 10580, rank: 17, total: 6.8, auto: 2.3, teleop: 3.4, endgame: 1.2, defense: false },
+        { team: 5705, rank: 18, total: 15.6, auto: 3.2, teleop: 10.1, endgame: 2.3, defense: false },
+        { team: 3933, rank: 19, total: 22.4, auto: 2.6, teleop: 18.1, endgame: 1.7, defense: false },
+        { team: 8740, rank: 20, total: 10.6, auto: 1.7, teleop: 6.5, endgame: 2.4, defense: false },
+        { team: 6170, rank: 21, total: 19.2, auto: 3.6, teleop: 14.4, endgame: 1.3, defense: false },
+        { team: 3158, rank: 22, total: 33.2, auto: 4.9, teleop: 27.3, endgame: 1.1, defense: false },
+        { team: 5959, rank: 23, total: 25.1, auto: 4, teleop: 18.2, endgame: 2.8, defense: false },
+        { team: 9301, rank: 24, total: 20.6, auto: 2.7, teleop: 12.4, endgame: 5.5, defense: false },
+        { team: 4775, rank: 25, total: 14.1, auto: 2.5, teleop: 11.1, endgame: 0.5, defense: false },
+        { team: 4584, rank: 26, total: 19.9, auto: 3.1, teleop: 15.1, endgame: 1.7, defense: false },
+        { team: 9053, rank: 27, total: 3.2, auto: 2.3, teleop: -0.2, endgame: 1, defense: false },
+        { team: 3522, rank: 28, total: 23.6, auto: 2.8, teleop: 19.8, endgame: 1, defense: false },
+        { team: 10225, rank: 29, total: 13.1, auto: 2.7, teleop: 8.9, endgame: 1.5, defense: false },
+        { team: 3527, rank: 30, total: 15.4, auto: 3.3, teleop: 11.1, endgame: 1, defense: false },
+        { team: 6676, rank: 31, total: 14.1, auto: 1.7, teleop: 11, endgame: 1.4, defense: false },
+        { team: 8741, rank: 32, total: 10.4, auto: 2, teleop: 5.8, endgame: 2.6, defense: false },
+        { team: 5932, rank: 33, total: 7.5, auto: 3.2, teleop: 3.3, endgame: 1, defense: false },
+        { team: 4731, rank: 34, total: 14.4, auto: 3, teleop: 10.5, endgame: 0.9, defense: false },
+        { team: 4977, rank: 35, total: 14.7, auto: 1.7, teleop: 11.8, endgame: 1.3, defense: false },
+        { team: 7725, rank: 36, total: 5, auto: 1.8, teleop: 3.5, endgame: -0.4, defense: false },
+        { team: 10529, rank: 37, total: 11.2, auto: 1.4, teleop: 8, endgame: 1.8, defense: false },
+        { team: 4371, rank: 38, total: 9.1, auto: 2.6, teleop: 6, endgame: 0.5, defense: false },
+        { team: 3794, rank: 39, total: 10.2, auto: 2.6, teleop: 5.9, endgame: 1.8, defense: false },
+        { team: 6652, rank: 40, total: 8.5, auto: 0.8, teleop: 7.2, endgame: 0.5, defense: false },
+        { team: 9282, rank: 41, total: 10.4, auto: 1.8, teleop: 7.8, endgame: 0.7, defense: false },
+        { team: 9065, rank: 42, total: 4.8, auto: 3.1, teleop: 0.3, endgame: 1.4, defense: false },
+        { team: 6606, rank: 43, total: 4.1, auto: 1, teleop: 1.5, endgame: 1.7, defense: false },
+    ];
+
+    // ----- Scoring Weights -----
+    var W_AUTO = 1.2, W_TELEOP = 1.0, W_ENDGAME = 1.1, W_DEFENSE = 15;
+    
+    teams.forEach(function(t) {
+      t.score = W_AUTO * t.auto + W_TELEOP * t.teleop + W_ENDGAME * t.endgame + (t.defense ? W_DEFENSE : 0);
+    });
+
+    // Sort teams by rank (ascending)
+    var teamsByRank = teams.slice().sort(function(a, b) {
+      return a.rank - b.rank;
+    });
+
+    // ----- Alliance Structure -----
+    var alliances = [];
+    for (var i = 0; i < 8; i++) {
+      alliances.push({
+        allianceNumber: i + 1,
+        captain: null,      // set in updateAllianceCaptains()
+        captainRank: null,
+        pick1: null,
+        pick2: null,
+        pick1Rec: null,
+        pick2Rec: null
+      });
+    }
+
+    // ----- Utility: Get Selected Picks -----
+    function getSelectedPicks() {
+      var selected = [];
+      alliances.forEach(function(a) {
+        if(a.pick1) { selected.push(parseInt(a.pick1)); }
+        if(a.pick2) { selected.push(parseInt(a.pick2)); }
+      });
+      return selected;
+    }
+
+    // ----- Recalculate Alliance Captains -----
+    function updateAllianceCaptains() {
+      var selectedPicks = getSelectedPicks();
+      var availableForCaptain = teamsByRank.filter(function(t) {
+        return selectedPicks.indexOf(t.team) === -1;
+      });
+      for (var i = 0; i < alliances.length; i++) {
+        if (availableForCaptain[i]) {
+          alliances[i].captain = availableForCaptain[i].team;
+          alliances[i].captainRank = availableForCaptain[i].rank;
+        } else {
+          alliances[i].captain = null;
+          alliances[i].captainRank = null;
+        }
+      }
+    }
+
+    // ----- Get Available Teams for a Draft Pick -----
+    // pickType is either "pick1" or "pick2". For pick2, alliance captains are excluded.
+    function getAvailableTeams(draftingCaptainRank, pickType) {
+      var selected = getSelectedPicks();
+      alliances.forEach(function(a) {
+        if (a.captain) { selected.push(a.captain); }
+      });
+      var available = teams.filter(function(t) {
+        if(selected.indexOf(t.team) === -1) return true;
+        var isCaptain = alliances.some(function(a) { return a.captain === t.team; });
+        if(isCaptain) {
+          if(pickType === 'pick1' && t.rank > draftingCaptainRank) {
+            return true;
+          }
+          return false;
+        }
+        return false;
+      });
+      available.sort(function(a, b) { return b.score - a.score; });
+      return available;
+    }
+
+    // ----- Helper: Get a Team's Score -----
+    function getTeamScore(teamNumber) {
+      var team = teams.find(function(t) { return t.team === teamNumber; });
+      return team ? team.score : 0;
+    }
+
+    // ----- Update Recommendations for Picks -----
+    function updateRecommendations() {
+      var draftOrder = [];
+      alliances.forEach(function(a, idx) {
+        if(!a.pick1) draftOrder.push({ allianceIndex: idx, pick: 'pick1', captainRank: a.captainRank });
+      });
+      for(var i = alliances.length-1; i >= 0; i--) {
+        if(!alliances[i].pick2) draftOrder.push({ allianceIndex: i, pick: 'pick2', captainRank: alliances[i].captainRank });
+      }
+      draftOrder.forEach(function(slot) {
+        var available = getAvailableTeams(slot.captainRank, slot.pick);
+        if(available.length > 0) {
+          alliances[slot.allianceIndex][slot.pick + 'Rec'] = available[0];
+        } else {
+          alliances[slot.allianceIndex][slot.pick + 'Rec'] = null;
+        }
+      });
+      renderTable();
+    }
+
+    // ----- Render the Alliance Table with Dropdowns and Alliance Score -----
+    function renderTable() {
+      var tbody = document.getElementById('allianceBody');
+      tbody.innerHTML = '';
+      alliances.forEach(function(a, idx) {
+        var row = document.createElement('tr');
+
+        // Alliance Number
+        var cellAlliance = document.createElement('td');
+        cellAlliance.innerText = a.allianceNumber;
+        row.appendChild(cellAlliance);
+
+        // Alliance Captain (read-only)
+        var cellCaptain = document.createElement('td');
+        cellCaptain.innerText = a.captain ? a.captain : "N/A";
+        row.appendChild(cellCaptain);
+
+        // Pick 1 Dropdown
+        var cellPick1 = document.createElement('td');
+        var selectPick1 = document.createElement('select');
+        selectPick1.dataset.allianceIndex = idx;
+        selectPick1.dataset.pick = 'pick1';
+        var emptyOption1 = document.createElement('option');
+        emptyOption1.value = "";
+        emptyOption1.text = "Select team";
+        selectPick1.appendChild(emptyOption1);
+        var availablePick1 = getAvailableTeams(a.captainRank, 'pick1');
+        if(a.pick1) {
+          var currentCandidate = teams.find(function(t) { return t.team === parseInt(a.pick1); });
+          var exists = availablePick1.some(function(t) { return t.team === currentCandidate.team; });
+          if(!exists) { availablePick1.unshift(currentCandidate); }
+        }
+        availablePick1.forEach(function(team) {
+          var option = document.createElement('option');
+          option.value = team.team;
+          option.text = "Team " + team.team + " (Score: " + team.score.toFixed(1) + ")";
+          if(a.pick1 && parseInt(a.pick1) === team.team) {
+            option.selected = true;
+          }
+          selectPick1.appendChild(option);
+        });
+        selectPick1.addEventListener('change', onPickChange);
+        cellPick1.appendChild(selectPick1);
+        row.appendChild(cellPick1);
+
+        // Recommendation for Pick 1
+        var cellRec1 = document.createElement('td');
+        if(a.pick1Rec) {
+          cellRec1.innerText = 'Team ' + a.pick1Rec.team + ' (Score: ' + a.pick1Rec.score.toFixed(1) + ')';
+        } else {
+          cellRec1.innerText = 'N/A';
+        }
+        row.appendChild(cellRec1);
+
+        // Pick 2 Dropdown
+        var cellPick2 = document.createElement('td');
+        var selectPick2 = document.createElement('select');
+        selectPick2.dataset.allianceIndex = idx;
+        selectPick2.dataset.pick = 'pick2';
+        var emptyOption2 = document.createElement('option');
+        emptyOption2.value = "";
+        emptyOption2.text = "Select team";
+        selectPick2.appendChild(emptyOption2);
+        var availablePick2 = getAvailableTeams(a.captainRank, 'pick2');
+        if(a.pick2) {
+          var currentCandidate2 = teams.find(function(t) { return t.team === parseInt(a.pick2); });
+          var exists2 = availablePick2.some(function(t) { return t.team === currentCandidate2.team; });
+          if(!exists2) { availablePick2.unshift(currentCandidate2); }
+        }
+        availablePick2.forEach(function(team) {
+          var option = document.createElement('option');
+          option.value = team.team;
+          option.text = "Team " + team.team + " (Score: " + team.score.toFixed(1) + ")";
+          if(a.pick2 && parseInt(a.pick2) === team.team) {
+            option.selected = true;
+          }
+          selectPick2.appendChild(option);
+        });
+        selectPick2.addEventListener('change', onPickChange);
+        cellPick2.appendChild(selectPick2);
+        row.appendChild(cellPick2);
+
+        // Recommendation for Pick 2
+        var cellRec2 = document.createElement('td');
+        if(a.pick2Rec) {
+          cellRec2.innerText = 'Team ' + a.pick2Rec.team + ' (Score: ' + a.pick2Rec.score.toFixed(1) + ')';
+        } else {
+          cellRec2.innerText = 'N/A';
+        }
+        row.appendChild(cellRec2);
+
+        // Alliance Score Column
+        var cellAllianceScore = document.createElement('td');
+        var allianceScore = 0;
+        if(a.captain) { allianceScore += getTeamScore(a.captain); }
+        if(a.pick1) { allianceScore += getTeamScore(a.pick1); }
+        if(a.pick2) { allianceScore += getTeamScore(a.pick2); }
+        cellAllianceScore.innerText = allianceScore.toFixed(1);
+        row.appendChild(cellAllianceScore);
+
+        tbody.appendChild(row);
+      });
+    }
+
+    // ----- Event Handler for Dropdown Change -----
+    function onPickChange(event) {
+      var allianceIndex = event.target.dataset.allianceIndex;
+      var pickType = event.target.dataset.pick;
+      var value = event.target.value;
+      if(value === "") {
+        alliances[allianceIndex][pickType] = null;
+        updateAllianceCaptains();
+        updateRecommendations();
+        return;
+      }
+      var teamNum = parseInt(value);
+      var candidate = teams.find(function(t) { return t.team === teamNum; });
+      if(!candidate) {
+        alert('Team ' + teamNum + ' does not exist.');
+        alliances[allianceIndex][pickType] = null;
+        updateAllianceCaptains();
+        updateRecommendations();
+        return;
+      }
+      if(pickType === 'pick2') {
+        if(alliances.some(function(a) { return a.captain === candidate.team; })) {
+          alert('You cannot pick an alliance captain for the second pick.');
+          alliances[allianceIndex][pickType] = null;
+          updateAllianceCaptains();
+          updateRecommendations();
+          return;
+        }
+      }
+      var selectedPicks = getSelectedPicks();
+      if(selectedPicks.indexOf(candidate.team) !== -1) {
+        alert('Team ' + teamNum + ' is already selected.');
+        alliances[allianceIndex][pickType] = null;
+        updateAllianceCaptains();
+        updateRecommendations();
+        return;
+      }
+      alliances[allianceIndex][pickType] = teamNum;
+      updateAllianceCaptains();
+      updateRecommendations();
+    }
+
+    // ----- Initial Setup -----
+    updateAllianceCaptains();
+    updateRecommendations();
+  </script>
+</body>
+</html>
