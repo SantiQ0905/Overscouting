@@ -14,27 +14,29 @@
     <button onclick="window.location.href='allianceSelector_v2.html'">Alliance Selector</button>
 
     <script>
-        fetch('/env')
-            .then(response => response.json())
-            .then(env => {
-                const authKey = env.TBA_AUTH_KEY;
+        const authKey = 'pUaYdGj2ZnnR2wqsn5B3njz0HKbLkE3DQVC3llJ8GO1FKW9zADGOLYZBSBFoUb4L'; // Directly include the Auth key
 
-                document.getElementById('fetchButton').addEventListener('click', function() {
-                    fetch('https://www.thebluealliance.com/api/v3/match/2024mxmo_qm72', {
-                        headers: {
-                            'X-TBA-Auth-Key': authKey
-                        }
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        document.getElementById('output').value = JSON.stringify(data, null, 2);
-                        createTable(data);
-                    })
-                    .catch(error => {
-                        document.getElementById('output').value = 'Error: ' + error;
-                    });
-                });
+        document.getElementById('fetchButton').addEventListener('click', function() {
+            console.log('Fetch button clicked'); // Log button click event
+            fetch('https://www.thebluealliance.com/api/v3/match/2024mxmo_qm72', {
+                headers: {
+                    'X-TBA-Auth-Key': authKey
+                }
+            })
+            .then(response => {
+                console.log('Response status:', response.status); // Log response status
+                return response.json();
+            })
+            .then(data => {
+                console.log('Data fetched:', data); // Log fetched data
+                document.getElementById('output').value = JSON.stringify(data, null, 2);
+                createTable(data);
+            })
+            .catch(error => {
+                console.error('Error:', error); // Log any errors
+                document.getElementById('output').value = 'Error: ' + error;
             });
+        });
 
         function createTable(data) {
             const tableContainer = document.getElementById('tableContainer');
